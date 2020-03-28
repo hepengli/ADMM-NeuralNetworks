@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 class ADMM_NN(object):
     """ Class for ADMM Neural Network. """
 
-    def __init__(self, n_inputs, n_hiddens, n_outputs, n_batches):
+    def __init__(self, n_inputs, n_hiddens, n_outputs, n_agents, n_batches):
 
         """
         Initialize variables for NN.
@@ -18,24 +18,34 @@ class ADMM_NN(object):
         :param n_inputs: Number of inputs.
         :param n_hiddens: Number of hidden units.
         :param n_outputs: Number of outputs
-        :param n_batches: Number of data sample that you want to train
+        :param n_agents: Number of agents
+        :param n_batches: Number of data sample for each agent to train
         :param return:
         """
-        self.a0 = np.zeros((n_inputs, n_batches))
+        self.a0 = np.zeros((n_agents, n_inputs, n_batches), dtype=np.float32)
 
-        self.w1 = np.zeros((n_hiddens, n_inputs))
-        self.w2 = np.zeros((n_hiddens, n_hiddens))
-        self.w3 = np.zeros((n_outputs, n_hiddens))
+        self.x1 = np.zeros((n_hiddens, n_inputs), dtype=np.float32)
+        self.x2 = np.zeros((n_hiddens, n_hiddens), dtype=np.float32)
+        self.x3 = np.zeros((n_outputs, n_hiddens), dtype=np.float32)
 
-        self.z1 = np.random.rand(n_hiddens, n_batches)
-        self.a1 = np.random.rand(n_hiddens, n_batches)
+        self.w1 = np.zeros((n_agents, n_hiddens, n_inputs), dtype=np.float32)
+        self.w2 = np.zeros((n_agents, n_hiddens, n_hiddens), dtype=np.float32)
+        self.w3 = np.zeros((n_agents, n_outputs, n_hiddens), dtype=np.float32)
 
-        self.z2 = np.random.rand(n_hiddens, n_batches)
-        self.a2 = np.random.rand(n_hiddens, n_batches)
+        self.y1 = np.zeros((n_agents, n_hiddens, n_inputs), dtype=np.float32)
+        self.y2 = np.zeros((n_agents, n_hiddens, n_hiddens), dtype=np.float32)
+        self.y3 = np.zeros((n_agents, n_outputs, n_hiddens), dtype=np.float32)
 
-        self.z3 = np.random.rand(n_outputs, n_batches)
+        self.z1 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
+        self.a1 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
 
-        self.lambda_larange = np.ones((n_outputs, n_batches))
+        self.z2 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
+        self.a2 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
+
+        self.z3 = np.random.rand(n_agents, n_outputs, n_batches).astype(np.float32)
+
+        self.lambda_larange = np.ones((n_agents, n_outputs, n_batches), dtype=np.float32)
+
 
     def _relu(self, x):
         """
@@ -45,7 +55,7 @@ class ADMM_NN(object):
         """
         return tf.maximum(0.,x)
 
-    def _weight_update(self, layer_output, activation_input):
+    def _weight_update(self, layer_output, activation_input, beta, rho, y, x_bar):
         """
         Consider it now the minimization of the problem with respect to W_l.
         For each layer l, the optimal solution minimizes ||z_l - W_l a_l-1||^2. This is simply
@@ -55,9 +65,18 @@ class ADMM_NN(object):
         :param activation_input: activation matrix l-1  (a_l-1)
         :return: weight matrix
         """
-        pinv = np.linalg.pinv(activation_input)
+        # p1, p2 = [], []
+        # for n in range(self.a0.shape[0]):
+        #     p1.append(tf.matmul(layer_output[n], activation_input[n], transpose_b=True))
+        #     p2.append(tf.matmul(activation_input[n], activation_input[n], transpose_b=True))
 
-        weight_matrix = tf.matmul(tf.cast(layer_output, tf.float32), tf.cast(pinv, tf.float32))
+        # p1, p2 = sum(p1), sum(p2)
+        # p2 = p2 + np.eye(p2.shape[0])*1e-5
+        # weight_matrix = tf.matmul(tf.cast(p1, tf.float32), tf.cast(np.linalg.inv(p2), tf.float32))
+
+        m1 = beta * tf.matmul(layer_output, activation_input, transpose_b=True) - y + rho * x_bar
+        m2 = beta * tf.matmul(activation_input, activation_input, transpose_b=True) + rho * np.eye(activation_input.shape[0])
+        weight_matrix = tf.matmul(tf.cast(m1, tf.float32), tf.cast(np.linalg.inv(m2), tf.float32))
 
         return weight_matrix
 
@@ -164,12 +183,13 @@ class ADMM_NN(object):
         :param inputs: inputs features
         :return: value of prediction
         """
-        outputs = self._relu(tf.matmul(self.w1, inputs))
-        outputs = self._relu(tf.matmul(self.w2, outputs))
-        outputs = tf.matmul(self.w3, outputs)
+        n = np.random.choice(self.a0.shape[0])
+        outputs = self._relu(tf.matmul(self.w1[n], inputs))
+        outputs = self._relu(tf.matmul(self.w2[n], outputs))
+        outputs = tf.matmul(self.w3[n], outputs)
         return outputs
 
-    def fit(self, inputs, labels, beta, gamma):
+    def fit(self, inputs, labels, beta, gamma, rho):
         """
         Training ADMM Neural Network by minimizing sub-problems
         :param inputs: input of training data samples
@@ -179,23 +199,43 @@ class ADMM_NN(object):
         :param gamma: value of gamma
         :return: loss value
         """
-        self.a0 = inputs
+        self.a0 = inputs.copy()
 
         # Input layer
-        self.w1 = self._weight_update(self.z1, self.a0)
-        self.a1 = self._activation_update(self.w2, self.z2, self.z1, beta, gamma)
-        self.z1 = self._argminz(self.a1, self.w1, self.a0, beta, gamma)
+        for n in range(self.a0.shape[0]):
+            self.w1[n] = self._weight_update(self.z1[n], self.a0[n], beta, rho, self.y1[n], self.x1)
+            self.a1[n] = self._activation_update(self.w2[n], self.z2[n], self.z1[n], beta, gamma)
+            self.z1[n] = self._argminz(self.a1[n], self.w1[n], self.a0[n], beta, gamma)
+
+        self.x1 = np.mean(self.w1 + (1.0/rho) * self.y1, axis=0)
+
+        for n in range(self.a0.shape[0]):
+            self.y1[n] = self.y1[n] + rho * (self.w1[n] - self.x1)
 
         # Hidden layer
-        self.w2 = self._weight_update(self.z2, self.a1)
-        self.a2 = self._activation_update(self.w3, self.z3, self.z2, beta, gamma)
-        self.z2 = self._argminz(self.a2, self.w2, self.a1, beta, gamma)
+        for n in range(self.a0.shape[0]):
+            self.w2[n] = self._weight_update(self.z2[n], self.a1[n], beta, rho, self.y2[n], self.x2)
+            self.a2[n] = self._activation_update(self.w3[n], self.z3[n], self.z2[n], beta, gamma)
+            self.z2[n] = self._argminz(self.a2[n], self.w2[n], self.a1[n], beta, gamma)
+
+        self.x2 = np.mean(self.w2 + (1.0/rho) * self.y2, axis=0)
+
+        for n in range(self.a0.shape[0]):
+            self.y2[n] = self.y2[n] + rho * (self.w2[n] - self.x2)
 
         # Output layer
-        self.w3 = self._weight_update(self.z3, self.a2)
-        self.z3 = self._argminlastz(labels, self.lambda_larange, self.w3, self.a2, beta)
-        self.lambda_larange = self._lambda_update(self.z3, self.w3, self.a2, beta)
+        for n in range(self.a0.shape[0]):
+            self.w3[n] = self._weight_update(self.z3[n], self.a2[n], beta, rho, self.y3[n], self.x3)
+            self.z3[n] = self._argminlastz(labels[n], self.lambda_larange[n], self.w3[n], self.a2[n], beta)
+            self.lambda_larange[n] = self._lambda_update(self.z3[n], self.w3[n], self.a2[n], beta)
 
+        self.x3 = np.mean(self.w3 + (1.0/rho) * self.y3, axis=0)
+
+        for n in range(self.a0.shape[0]):
+            self.y3[n] = self.y3[n] + rho * (self.w3[n] - self.x3)
+
+        inputs = np.vstack(np.transpose(inputs, axes=[0,2,1])).transpose()
+        labels = np.vstack(np.transpose(labels, axes=[0,2,1])).transpose()
         loss, accuracy = self.evaluate(inputs, labels)
         return loss, accuracy
 
@@ -219,7 +259,7 @@ class ADMM_NN(object):
 
         return loss, accuracy
 
-    def warming(self, inputs, labels, epochs, beta, gamma):
+    def warming(self, inputs, labels, epochs, beta, gamma, rho):
         """
         Warming ADMM Neural Network by minimizing sub-problems without update lambda
         :param inputs: input of training data samples
@@ -233,18 +273,36 @@ class ADMM_NN(object):
         for i in range(epochs):
             print("------ Warming: {:d} ------".format(i))
             # Input layer
-            self.w1 = self._weight_update(self.z1, self.a0)
-            self.a1 = self._activation_update(self.w2, self.z2, self.z1, beta, gamma)
-            self.z1 = self._argminz(self.a1, self.w1, self.a0, beta, gamma)
+            for n in range(self.a0.shape[0]):
+                self.w1[n] = self._weight_update(self.z1[n], self.a0[n], beta, rho, self.y1[n], self.x1)
+                self.a1[n] = self._activation_update(self.w2[n], self.z2[n], self.z1[n], beta, gamma)
+                self.z1[n] = self._argminz(self.a1[n], self.w1[n], self.a0[n], beta, gamma)
+
+            self.x1 = np.mean(self.w1 + (1.0/rho) * self.y1, axis=0)
+
+            for n in range(self.a0.shape[0]):
+                self.y1[n] = self.y1[n] + rho * (self.w1[n] - self.x1)
 
             # Hidden layer
-            self.w2 = self._weight_update(self.z2, self.a1)
-            self.a2 = self._activation_update(self.w3, self.z3, self.z2, beta, gamma)
-            self.z2 = self._argminz(self.a2, self.w2, self.a1, beta, gamma)
+            for n in range(self.a0.shape[0]):
+                self.w2[n] = self._weight_update(self.z2[n], self.a1[n], beta, rho, self.y2[n], self.x2)
+                self.a2[n] = self._activation_update(self.w3[n], self.z3[n], self.z2[n], beta, gamma)
+                self.z2[n] = self._argminz(self.a2[n], self.w2[n], self.a1[n], beta, gamma)
+
+            self.x2 = np.mean(self.w2 + (1.0/rho) * self.y2, axis=0)
+
+            for n in range(self.a0.shape[0]):
+                self.y2[n] = self.y2[n] + rho * (self.w2[n] - self.x2)
 
             # Output layer
-            self.w3 = self._weight_update(self.z3, self.a2)
-            self.z3 = self._argminlastz(labels, self.lambda_larange, self.w3, self.a2, beta)
+            for n in range(self.a0.shape[0]):
+                self.w3[n] = self._weight_update(self.z3[n], self.a2[n], beta, rho, self.y3[n], self.x3)
+                self.z3[n] = self._argminlastz(labels[n], self.lambda_larange[n], self.w3[n], self.a2[n], beta)
+
+            self.x3 = np.mean(self.w3 + (1.0/rho) * self.y3, axis=0)
+
+            for n in range(self.a0.shape[0]):
+                self.y3[n] = self.y3[n] + rho * (self.w3[n] - self.x3)
 
     def drawcurve(self, train_, valid_, id, legend_1, legend_2):
         acc_train = np.array(train_).flatten()
