@@ -24,18 +24,22 @@ class AS_ADMM_NN(object):
         """
         self.a0 = np.zeros((n_agents, n_inputs, n_batches), dtype=np.float32)
 
-        self.x1 = np.zeros((n_edges, n_agents, n_hiddens, n_inputs), dtype=np.float32)
-        self.x2 = np.zeros((n_edges, n_agents, n_hiddens, n_hiddens), dtype=np.float32)
-        self.x3 = np.zeros((n_edges, n_agents, n_outputs, n_hiddens), dtype=np.float32)
-
+        # NN weights
         self.w1 = np.zeros((n_agents, n_hiddens, n_inputs), dtype=np.float32)
         self.w2 = np.zeros((n_agents, n_hiddens, n_hiddens), dtype=np.float32)
         self.w3 = np.zeros((n_agents, n_outputs, n_hiddens), dtype=np.float32)
 
+        # Estimate of NN weights
+        self.x1 = np.zeros((n_edges, n_agents, n_hiddens, n_inputs), dtype=np.float32)
+        self.x2 = np.zeros((n_edges, n_agents, n_hiddens, n_hiddens), dtype=np.float32)
+        self.x3 = np.zeros((n_edges, n_agents, n_outputs, n_hiddens), dtype=np.float32)
+
+        # Lagrange coeffients
         self.y1 = np.zeros((n_edges, n_agents, n_hiddens, n_inputs), dtype=np.float32)
         self.y2 = np.zeros((n_edges, n_agents, n_hiddens, n_hiddens), dtype=np.float32)
         self.y3 = np.zeros((n_edges, n_agents, n_outputs, n_hiddens), dtype=np.float32)
 
+        # Neurons' inputs and outputs
         self.z1 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
         self.a1 = np.random.rand(n_agents, n_hiddens, n_batches).astype(np.float32)
 
