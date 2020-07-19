@@ -74,7 +74,7 @@ list_accuracy_train = []
 list_accuracy_valid = []
 for i in range(train_epochs):
     print("------ Training: {:d} ------".format(i))
-    loss_train, accuracy_train = model.fit(trainX, trainY, beta, gamma, rho, A)
+    loss_train, accuracy_train = model.fit(trainX, trainY, gamma, beta)
     loss_valid, accuracy_valid = model.evaluate(validX, validY)
     print("Loss train: %3f, accuracy train: %3f" % (np.array(loss_train), np.array(accuracy_train)))
     print("Loss valid: %3f, accuracy valid: %3f" % (np.array(loss_valid), np.array(accuracy_valid)))
